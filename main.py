@@ -163,9 +163,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"• Abuse Targets: {len(abuse_targets)}\n"
             f"• Lovers: {len(lover_targets)}\n"
             f"• Other Admins: {len(admin_ids)}\n\n"
-            "📋 ADMIN COMMANDS:\n"
-            "/admin - Show admin panel\n"
-            "/status - Bot status\n"
+            "🎮 USER ENTERTAINMENT COMMANDS:\n"
+            "/joke - Get funny joke\n"
+            "/quote - Get motivational quote\n"
+            "/tip - Get daily life tip\n"
+            "/compliment - Get random compliment\n"
+            "/fortune - Get your fortune\n"
+            "/dare - Get a dare\n"
+            "/truth - Get truth question\n"
+            "/flip - Coin flip\n"
+            "/dice - Dice roll\n"
+            "/lovetest - Love meter\n"
+            "/clear - Start fresh chat\n"
+            "/help - Show user help\n"
+            "/myinfo - Check user status\n\n"
+            "👤 ADMIN CONTROLS:\n"
+            "/admin - Admin panel\n"
+            "/status - Bot statistics\n"
             "/stop - Disable bot\n"
             "/resume - Enable bot\n"
             "/block @user - Block user\n"
@@ -174,21 +188,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "/unmute @user - Resume talking to user\n"
             "/abuse @user - Target user with gaalis\n"
             "/unabuse @user - Stop abusing user\n"
-            "/addlover <user_id> - Add lover (auto-flirty mode)\n"
-            "/removelover <user_id> - Remove lover\n"
+            "/addlover @user - Add lover (auto-flirty)\n"
+            "/removelover @user - Remove lover\n"
             "/listlovers - Show lovers\n"
-            "/reset - Reset all conversation data\n"
+            "/blocknaughty @user - Block naughty talk\n"
+            "/unblocknaughty @user - Allow naughty talk\n"
+            "/listblocknaughty - Show naughty-blocked users\n"
+            "/reset - Reset all data\n"
             "/restart - Restart bot\n"
             "/groupon - Enable group auto-reply\n"
             "/groupoff - Disable group auto-reply\n"
             "/listblocked - Show blocked users\n"
             "/listmuted - Show muted users\n"
             "/listabuse - Show abuse targets\n"
-            "/viewchat <user_id> - See user's chat history\n"
-            "/broadcast <message> - Send message to all users\n\n"
-            "👤 SUPER ADMIN ONLY:\n"
-            "/addadmin <user_id> - Add admin by ID\n"
-            "/removeadmin <user_id> - Remove admin\n"
+            "/viewchat @user - See user's chat history\n"
+            "/listusers - List all users (click to view)\n"
+            "/broadcast <msg> - Send to all users\n\n"
+            "👑 SUPER ADMIN ONLY (@CoffinWifi):\n"
+            "/addadmin @user - Add admin by username\n"
+            "/removeadmin @user - Remove admin\n"
             "/listadmins - List all admins\n\n"
             "💡 I'll send you permission requests for dirty talk!"
         )
@@ -627,17 +645,19 @@ async def add_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if not context.args:
-        await update.message.reply_text("Usage: /addadmin <user_id>\nExample: /addadmin 123456789")
+        await update.message.reply_text("Usage: /addadmin @username or <user_id>\nExample: /addadmin @ShadowUser or /addadmin 123456789")
         return
     
-    user_id = context.args[0].strip()
-    if not user_id.isdigit():
-        await update.message.reply_text("Please provide a valid numeric user ID!")
+    identifier = context.args[0]
+    user_id = resolve_user_id(identifier)
+    
+    if not user_id:
+        await update.message.reply_text(f"❌ User {identifier} not found! They need to message the bot first, or use their numeric ID.")
         return
     
     admin_ids.add(user_id)
     save_admin_data()
-    await update.message.reply_text(f"✅ Added admin: {user_id}")
+    await update.message.reply_text(f"✅ Added admin: {identifier} (ID: {user_id})")
 
 
 async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -962,6 +982,42 @@ async def view_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(chat_text)
 
 
+async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_message_after_start(update.message):
+        return
+    if not is_admin(update.effective_user):
+        return
+    
+    if not conversation_history:
+        await update.message.reply_text("No users yet! 😊")
+        return
+    
+    # Create buttons for each user
+    keyboard = []
+    user_list = list(conversation_history.keys())
+    
+    # Show 2 users per row
+    for i in range(0, len(user_list), 2):
+        row = []
+        for j in range(2):
+            if i + j < len(user_list):
+                user_id = user_list[i + j]
+                user_name = username_to_id.get(user_id, f"User {user_id[:6]}")
+                # Reverse lookup to get username
+                for name, uid in username_to_id.items():
+                    if str(uid) == str(user_id):
+                        user_name = name
+                        break
+                row.append(InlineKeyboardButton(f"👤 {user_name}", callback_data=f"viewuser_{user_id}"))
+        keyboard.append(row)
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"📊 USERS ({len(conversation_history)}):\n\nClick on a user to view their chats:",
+        reply_markup=reply_markup
+    )
+
+
 async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_message_after_start(update.message):
         return
@@ -1059,6 +1115,34 @@ async def handle_permission_callback(update: Update, context: ContextTypes.DEFAU
         return
     
     data = query.data
+    
+    # Handle user view callback
+    if data.startswith("viewuser_"):
+        user_id = data.replace("viewuser_", "")
+        
+        if user_id not in conversation_history or not conversation_history[user_id]:
+            await query.edit_message_text(f"No chat history with this user")
+            return
+        
+        user_name = None
+        for name, uid in username_to_id.items():
+            if str(uid) == str(user_id):
+                user_name = name
+                break
+        user_name = user_name or f"User {user_id[:6]}"
+        
+        chat_text = f"💬 CHAT WITH {user_name}:\n\n"
+        for msg in conversation_history[user_id][-20:]:
+            text = msg["parts"][0]["text"] if msg["parts"] else ""
+            role = "📤 YOU" if msg['role'] == 'user' else "📥 NAINA"
+            chat_text += f"{role}: {text}\n\n"
+        
+        if len(chat_text) > 4000:
+            await query.edit_message_text(chat_text[:4000] + "\n\n... (truncated)")
+        else:
+            await query.edit_message_text(chat_text)
+        return
+    
     parts = data.split("_")
     action = parts[0]
     user_id = parts[1]
@@ -1620,6 +1704,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("myinfo", my_info))
     application.add_handler(CommandHandler("viewchat", view_chat))
+    application.add_handler(CommandHandler("listusers", list_users))
     application.add_handler(CommandHandler("broadcast", broadcast_message))
     application.add_handler(CommandHandler("clear", clear_chat))
     application.add_handler(CallbackQueryHandler(handle_permission_callback))
