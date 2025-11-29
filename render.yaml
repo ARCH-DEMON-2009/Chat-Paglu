@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: naina-bot
+    env: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        scope: run
+        sync: false
+      - key: GEMINI_API_KEY
+        scope: run
+        sync: false
+      - key: GEMINI_API_KEY_BACKUP
+        scope: run
+        sync: false
