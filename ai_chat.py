@@ -40,7 +40,11 @@ def call_gemini_with_fallback(contents, system_instruction, temperature=0.7):
     try:
         ai_client = get_client()
         if not ai_client:
-            return None
+            logger.error("Primary Gemini client is None - API key missing")
+            ai_client = get_backup_client()
+            if not ai_client:
+                logger.error("Backup Gemini client also failed - NO API KEYS SET")
+                return None
         
         response = ai_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -50,9 +54,12 @@ def call_gemini_with_fallback(contents, system_instruction, temperature=0.7):
                 temperature=temperature,
             )
         )
-        return response
+        if response and response.text:
+            return response
+        logger.error("Response from Gemini was empty or None")
+        return None
     except Exception as e:
-        logger.warning(f"Primary API key failed: {e}. Trying backup key...")
+        logger.error(f"Primary API key failed: {e}. Trying backup key...")
         try:
             backup = get_backup_client()
             if not backup:
@@ -67,8 +74,10 @@ def call_gemini_with_fallback(contents, system_instruction, temperature=0.7):
                     temperature=temperature,
                 )
             )
-            logger.info("Backup API key worked!")
-            return response
+            if response and response.text:
+                logger.info("Backup API key worked!")
+                return response
+            return None
         except Exception as e2:
             logger.error(f"Backup API key also failed: {e2}")
             return None
