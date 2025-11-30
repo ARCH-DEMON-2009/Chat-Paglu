@@ -7,7 +7,6 @@
     "DJ_DRAGON_000": "@DJ_DRAGON_000"
   },
   "lover_targets": {
-    "8529977696": "@TanduriShadow",
     "5710293067": "@GodL_Prince",
     "8489714021": "@Studyoceanowner"
   },
@@ -16,7 +15,9 @@
   "group_auto_reply": true,
   "tracked_groups": [
     "-1003023210156",
+    "-1002685923720",
+    "-1002204976076",
     "-1002732284168",
-    "-1002204976076"
+    "-1003026037635"
   ]
 }
