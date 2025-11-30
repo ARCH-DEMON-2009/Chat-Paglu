@@ -5,7 +5,6 @@ import random
 import time
 import json
 import sys
-from flask import Flask, request
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes, JobQueue
@@ -27,9 +26,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# Flask app for Render Web Service
-app = Flask(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 ADMIN_USERNAME = "CoffinWifi"
@@ -906,30 +902,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
 
-# ========== FLASK ROUTES FOR RENDER WEB SERVICE ==========
-
-@app.route('/', methods=['GET'])
-def health():
-    """Health check endpoint for Render"""
-    return {'status': 'Bot is running!'}, 200
-
-
-@app.route('/webhook', methods=['POST'])
-async def webhook():
-    """Telegram webhook endpoint"""
-    data = request.get_json()
-    try:
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
-        return 'ok', 200
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return 'error', 400
-
-
-def setup_bot():
-    global application
-    
+def main():
     load_admin_data()
     
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
@@ -978,25 +951,40 @@ def setup_bot():
     application.add_handler(CommandHandler("listusers", list_users))
     application.add_handler(CommandHandler("broadcast", broadcast_message))
     application.add_handler(CommandHandler("clear", clear_chat))
-    
     application.add_handler(CallbackQueryHandler(handle_permission_callback))
     application.add_handler(MessageHandler(filters.Sticker.ALL, handle_sticker))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     application.add_error_handler(error_handler)
     
-    # Setup keep-alive job to send message every 10 minutes
+    # Setup keep-alive job to send message every 10 minutes (Render shuts down after 15 mins inactivity)
     job_queue = application.job_queue
-    job_queue.run_repeating(keep_alive_job, interval=600, first=60)
+    job_queue.run_repeating(keep_alive_job, interval=600, first=60)  # Every 10 minutes, first run after 1 min
     
-    logger.info("✅ Naina Bot setup complete!")
-
-
-# ========== START BOT ==========
-
-if __name__ == '__main__':
-    setup_bot()
+    logger.info("Naina Bot is running! Press Ctrl+C to stop.")
+    print("✅ Naina Bot is running successfully!")
+    print("📱 Works in private chats, groups, and channels!")
+    print("💬 Responds to ALL messages in groups (auto-reply enabled)")
+    print("😈 Replies with abuse when someone abuses")
+    print("📝 Follows user advice and suggestions")
+    print(f"👑 Admin: @{ADMIN_USERNAME}")
+    print("\n📋 ADMIN FEATURES:")
+    print("• /admin - Admin panel with all controls")
+    print("• /stop, /resume - Enable/disable bot")
+    print("• /block, /unblock - Block/unblock users")
+    print("• /mute, /unmute - Stop/resume talking to users")
+    print("• /abuse, /unabuse - Target users with gaalis")
+    print("• /reset - Reset all data")
+    print("• /restart - Restart bot")
+    print("• /groupon, /groupoff - Toggle group auto-reply")
     
-    # Run Flask for Render Web Service
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    if admin_chat_id:
+        print(f"\n✅ Admin chat ID loaded: {admin_chat_id}")
+    else:
+        print("\n⚠️ Admin needs to /start the bot to receive permission requests")
+    
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+if __name__ == "__main__":
+    main()
