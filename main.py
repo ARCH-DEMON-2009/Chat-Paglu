@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import random
@@ -64,15 +65,22 @@ async def _send_normal_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
     chat_id = update.effective_chat.id
     user_id = str(update.effective_user.id)
     delay = get_typing_delay(len(text), settings.typing_delay_min, settings.typing_delay_max)
-    await send_typing(context, chat_id, delay)
+    try:
+        await send_typing(context, chat_id, delay)
+    except Exception as exc:
+        logger.info('Typing indicator unavailable (%s).', type(exc).__name__)
     if reply_to_message_id:
         await update.message.reply_text(text, reply_to_message_id=reply_to_message_id)
     else:
         await update.message.reply_text(text)
-    last_bot_response[user_id] = time.time()
+    now = time.time()
+    last_bot_response[user_id] = now
+    cooldowns[str(chat_id)] = now
 
 
 def _remember_if_needed(user_id: str, message: str) -> None:
+    if not settings.memory_enabled:
+        return
     lower = message.lower()
     if 'remember' in lower and ('like' in lower or 'love' in lower or 'favorite' in lower):
         fact = message.replace('remember', '', 1).strip()
@@ -85,6 +93,8 @@ def _remember_if_needed(user_id: str, message: str) -> None:
 
 
 def _get_memory_answer(user_id: str, message: str) -> Optional[str]:
+    if not settings.memory_enabled:
+        return None
     lower = message.lower()
     if 'what game do i like' in lower or 'what game i like' in lower:
         facts = memory_store.get_user_facts(user_id)
@@ -104,7 +114,8 @@ def _get_memory_answer(user_id: str, message: str) -> Optional[str]:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
     if update.effective_chat.type == 'private':
-        memory_store.upsert_user(user_id, update.effective_user.first_name, update.effective_user.username)
+        if settings.memory_enabled:
+            memory_store.upsert_user(user_id, update.effective_user.first_name, update.effective_user.username)
         await update.message.reply_text(
             'Heyy, I’m Aisha 😊 I’m here to chat, joke, answer questions, and hang out in your group. Use /help to see what I can do.'
         )
@@ -271,11 +282,21 @@ async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_id = str(update.effective_user.id)
     chat_type = update.effective_chat.type
     args = [arg.strip() for arg in (context.args or []) if arg and arg.strip()]
-    mention = next((arg for arg in args if arg.startswith('@')), None)
+    mention = next((arg for arg in args if re.fullmatch(r'@[A-Za-z0-9_]{5,32}', arg)), None)
     toggle_args = [arg for arg in args if not arg.startswith('@')]
     if toggle_args and toggle_args[0].lower() in {'off', 'disable', 'false'}:
         clear_user_mode(user_id)
         await update.message.reply_text('Love mode is off. Back to normal chat.')
+        return
+    if mention and chat_type in {'group', 'supergroup'}:
+        target_name = mention[1:]
+        response = await asyncio.to_thread(
+            get_lover_response,
+            f'group:{update.effective_chat.id}:{target_name.lower()}',
+            f'Write a short, respectful affectionate message addressed to {target_name}.',
+            target_name,
+        )
+        await update.message.reply_text(f'{mention} {response}')
         return
     if chat_type in {'group', 'supergroup'} and not settings.love_mode_allowed_in_groups:
         await update.message.reply_text('Love mode is disabled in groups here.')
@@ -336,40 +357,47 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_type = update.effective_chat.type
     _remember_if_needed(user_id, text)
 
-    if 'remember' in text.lower() and ('like' in text.lower() or 'love' in text.lower()):
-        memory_store.record_user_fact(user_id, 'remembered_fact', text)
-
     memory_answer = _get_memory_answer(user_id, text)
     if memory_answer:
         await _send_normal_reply(update, context, memory_answer, reply_to_message_id=update.message.message_id)
         return
 
     if chat_type in {'group', 'supergroup'}:
-        direct_mention = 'aisha' in text.lower() or 'naina' in text.lower()
+        lower_text = text.lower()
+        bot_username = (getattr(context.bot, 'username', None) or '').lower()
+        direct_mention = bool(re.search(r'\b(aisha|naina)\b', lower_text)) or bool(bot_username and f'@{bot_username}' in lower_text)
         reply_to_bot = bool(update.message.reply_to_message and update.message.reply_to_message.from_user and update.message.reply_to_message.from_user.id == context.bot.id)
         is_question = '?' in text
-        should_reply = direct_mention or reply_to_bot or is_question or should_participate(
-            context,
-            bot_last_action_at=last_bot_response.get(user_id),
-            direct_mention=direct_mention,
-            reply_to_bot=reply_to_bot,
-            question=is_question,
-            image=False,
-        )
+        explicit_trigger = direct_mention or reply_to_bot or is_question
+        should_reply = explicit_trigger
+        if not should_reply and settings.group_participation_enabled:
+            now = time.time()
+            user_cooldown_passed = now - last_bot_response.get(user_id, 0) >= settings.per_user_cooldown_seconds
+            group_cooldown_passed = now - cooldowns.get(str(update.effective_chat.id), 0) >= settings.global_cooldown_seconds
+            should_reply = user_cooldown_passed and group_cooldown_passed and should_participate(
+                context,
+                probability=settings.group_response_probability,
+            )
         if not should_reply:
             return
         user_name = update.effective_user.first_name or update.effective_user.username or 'User'
-        response = get_group_response(str(update.effective_chat.id), user_name, text)
+        mode = get_user_mode(user_id)
+        if mode == ChatMode.LOVE:
+            response = await asyncio.to_thread(get_lover_response, user_id, text, user_name)
+        elif mode == ChatMode.ABUSE:
+            response = await asyncio.to_thread(get_abuse_response, user_id, text, user_name)
+        else:
+            response = await asyncio.to_thread(get_group_response, str(update.effective_chat.id), user_name, text)
         await _send_normal_reply(update, context, response, reply_to_message_id=update.message.message_id if reply_to_bot or direct_mention else None)
         return
 
     mode = get_user_mode(user_id)
     if mode == ChatMode.LOVE:
-        response = get_lover_response(user_id, text, update.effective_user.first_name or 'User')
+        response = await asyncio.to_thread(get_lover_response, user_id, text, update.effective_user.first_name or 'User')
     elif mode == ChatMode.ABUSE:
-        response = get_abuse_response(user_id, text, update.effective_user.first_name or 'User')
+        response = await asyncio.to_thread(get_abuse_response, user_id, text, update.effective_user.first_name or 'User')
     else:
-        response = get_ai_response(user_id, text, update.effective_user.first_name or 'User')
+        response = await asyncio.to_thread(get_ai_response, user_id, text, update.effective_user.first_name or 'User')
     await _send_normal_reply(update, context, response, reply_to_message_id=update.message.message_id)
 
 
@@ -379,11 +407,21 @@ async def handle_photo_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     message = update.message
     caption = (message.caption or '').strip()
-    if caption:
-        answer = vision_service.answer_image_question(caption)
-        await _send_normal_reply(update, context, answer, reply_to_message_id=message.message_id)
+    try:
+        photo = message.photo[-1]
+        telegram_file = await photo.get_file()
+        image_bytes = bytes(await telegram_file.download_as_bytearray())
+    except Exception as exc:
+        logger.warning('Could not download a Telegram photo (%s).', type(exc).__name__)
+        await message.reply_text('I couldn’t download that image. Please try sending it again.')
         return
-    await _send_normal_reply(update, context, 'I can read the image but the text isn’t clear enough yet. Please send a clearer photo if you want me to analyze it.', reply_to_message_id=message.message_id)
+    answer = await asyncio.to_thread(
+        vision_service.answer_image_question,
+        caption or 'Describe this image and read any visible text.',
+        image_bytes,
+        'image/jpeg',
+    )
+    await _send_normal_reply(update, context, answer, reply_to_message_id=message.message_id)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

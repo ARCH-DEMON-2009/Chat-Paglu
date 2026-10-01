@@ -35,9 +35,13 @@ class MemoryStore:
         self.upsert_user(user_id)
         with self.db.get_connection() as conn:
             existing = conn.execute("SELECT facts FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            facts = json.loads(existing["facts"]) if existing and existing["facts"] else []
+            stored_facts = existing["facts"] if existing else None
+            facts = stored_facts if isinstance(stored_facts, list) else json.loads(stored_facts) if stored_facts else []
             facts.append({"key": key, "value": value})
-            conn.execute("UPDATE users SET facts = ? WHERE user_id = ?", (json.dumps(facts[-50:]), user_id))
+            if self.db.is_postgres:
+                conn.execute("UPDATE users SET facts = ?::jsonb WHERE user_id = ?", (json.dumps(facts[-50:]), user_id))
+            else:
+                conn.execute("UPDATE users SET facts = ? WHERE user_id = ?", (json.dumps(facts[-50:]), user_id))
             conn.commit()
 
     def get_user_facts(self, user_id: str) -> List[str]:
@@ -45,7 +49,8 @@ class MemoryStore:
             row = conn.execute("SELECT facts FROM users WHERE user_id = ?", (user_id,)).fetchone()
             if not row or not row["facts"]:
                 return []
-            facts = json.loads(row["facts"])
+            stored_facts = row["facts"]
+            facts = stored_facts if isinstance(stored_facts, list) else json.loads(stored_facts)
             return [f"{item.get('key', 'fact')}: {item.get('value', '')}" for item in facts]
 
     def clear_user_memory(self, user_id: str) -> None:
@@ -64,8 +69,9 @@ class MemoryStore:
 
     def get_group_context(self, chat_id: str, limit: int = 30) -> List[Dict[str, Any]]:
         with self.db.get_connection() as conn:
+            timestamp_column = "created_at" if self.db.is_postgres else "timestamp"
             rows = conn.execute(
-                "SELECT user_name, text, reply_to, timestamp FROM group_context WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
+                f"SELECT user_name, text, reply_to, {timestamp_column} AS timestamp FROM group_context WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
                 (chat_id, limit),
             ).fetchall()
             return [dict(row) for row in rows[::-1]]

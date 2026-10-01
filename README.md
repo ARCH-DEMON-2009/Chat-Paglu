@@ -5,12 +5,13 @@ Chat-Paglu is a Telegram group chat assistant with a fictional AI-girl personali
 ## Installation
 
 1. Clone the repo.
-2. Create a virtual environment.
-3. Install dependencies:
+2. Create a virtual environment and install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
+
+3. Copy `.env.example` to `.env` and fill in your Telegram token and Gemini API key.
 
 ## Environment variables
 
@@ -19,8 +20,8 @@ Copy `.env.example` to `.env` and fill in the values.
 Required values:
 
 - `TELEGRAM_BOT_TOKEN`
-- `GEMINI_API_KEY`
-- `ADMIN_IDS`
+- `GEMINI_API_KEY` (optional; without it the bot uses offline fallback replies)
+- `ADMIN_IDS` (Telegram user IDs allowed to use admin commands)
 
 Optional values:
 
@@ -47,6 +48,7 @@ python main.py
 
 - `/help`
 - `/love`
+- `/lover @username` - send a one-shot affectionate message in a group
 - `/abuse`
 - `/stats`
 - `/reload`
@@ -59,9 +61,11 @@ python main.py
 - `/vision`
 - `/admin`
 
-## Memory system
+## Database
 
-The bot stores user preferences and facts in SQLite. Memory is intentionally limited to useful, non-sensitive facts, and users can request memory removal via admin tools.
+SQLite is the default. To use Supabase Postgres, run `supabase_schema.sql` in the Supabase SQL editor, set `USE_SUPABASE=true`, and set `DATABASE_URL` to the project's PostgreSQL connection URL. URL-encode reserved characters in the database password. Postgres connections require SSL.
+
+The bot stores user preferences and facts in the configured database. Memory is intentionally limited to useful, non-sensitive facts, and admins can clear a user's memory with `/clear_memory [user_id]`.
 
 ## Image and question handling
 
@@ -70,3 +74,5 @@ When a user uploads an image, the app checks for a question or simple readable t
 ## Deployment
 
 This project is compatible with Render and Procfile-based deployment. The service uses a Python worker process.
+
+For group replies beyond commands, mentions, and questions, disable BotFather's group privacy mode or grant the bot suitable group permissions so Telegram delivers ordinary group messages.

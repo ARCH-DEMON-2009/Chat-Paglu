@@ -1,12 +1,19 @@
 [project]
-name = "python-template"
+name = "chat-paglu"
 version = "0.1.0"
-description = ""
-authors = ["Shashank Shadow.oncehuman@gmail.com"]
+description = "Personality-driven Telegram group chat assistant"
+authors = [{ name = "Shashank", email = "Shadow.oncehuman@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "google-genai>=1.52.0",
-    "python-telegram-bot>=22.5",
-    "sift-stack-py>=0.9.1",
-    "telegram>=0.0.1",
+    "python-telegram-bot[job-queue]>=22.5",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.24.0",
+    "psycopg2-binary>=2.9.9",
 ]
+
+[tool.setuptools]
+py-modules = ["ai_chat", "main", "keep_alive", "vision_service"]
+
+[tool.setuptools.packages.find]
+include = ["character*", "chat*", "config*", "memory*", "vision*"]

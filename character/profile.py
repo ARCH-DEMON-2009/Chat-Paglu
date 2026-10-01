@@ -46,7 +46,6 @@ def load_character_profile(path: str | None = None) -> Dict[str, Any]:
             return merged
         except (json.JSONDecodeError, OSError):
             pass
-    save_character_profile(DEFAULT_PROFILE, resolved)
     return DEFAULT_PROFILE.copy()
 
 

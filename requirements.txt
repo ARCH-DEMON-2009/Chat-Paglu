@@ -1,10 +1,6 @@
-google-genai>=0.3.0
-python-telegram-bot[job-queue]>=22.0
+google-genai>=1.52.0
+python-telegram-bot[job-queue]>=22.5
 httpx>=0.24.0
-requests>=2.31.0
 python-dotenv>=1.0.0
-sift-stack-py
-telegram
 psycopg2-binary>=2.9.9
-supabase>=2.7.4
 pytest>=8.0.0

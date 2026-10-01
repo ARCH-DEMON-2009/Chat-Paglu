@@ -2,8 +2,10 @@ __pycache__/
 .pytest_cache/
 *.pyc
 *.pyo
+*.egg-info/
 .env
 .env.*
+!.env.example
 chatpaglu.db
 *.db
 .venv/

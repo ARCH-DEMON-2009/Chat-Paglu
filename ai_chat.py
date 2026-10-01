@@ -2,6 +2,8 @@ import logging
 import os
 import random
 
+from character.profile import build_character_prompt
+
 try:
     from google import genai
     from google.genai import types
@@ -48,20 +50,43 @@ def get_custom_abuse_response(user_id: str, user_message: str, user_name: str = 
     return f"bro calm down 😭 at least say it with a better attitude."
 
 
-def call_gemini_with_fallback(contents, system_instruction, temperature=0.7):
-    if genai is None or not os.getenv('GEMINI_API_KEY'):
+def call_gemini_with_fallback(contents, system_instruction, temperature=0.7, model=None):
+    if genai is None or types is None:
         return None
-    try:
-        client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=contents,
-            config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=temperature),
-        )
-        return response
-    except Exception as exc:  # pragma: no cover - API failure is handled at runtime
-        logger.warning('Gemini request failed: %s', exc)
-        return None
+    api_keys = [os.getenv(name, '').strip() for name in ('GEMINI_API_KEY', 'GEMINI_API_KEY_BACKUP')]
+    for api_key in dict.fromkeys(key for key in api_keys if key):
+        try:
+            client = genai.Client(api_key=api_key)
+            return client.models.generate_content(
+                model=model or os.getenv('AI_MODEL', 'gemini-2.5-flash'),
+                contents=contents,
+                config=types.GenerateContentConfig(system_instruction=system_instruction, temperature=temperature),
+            )
+        except Exception:
+            logger.warning('Gemini request failed; trying the next configured key.')
+    return None
+
+
+def _generate_response(history, user_message, user_name, mode, fallback):
+    history.append({'role': 'user', 'text': f'{user_name}: {user_message}'})
+    recent = history[-10:]
+    contents = [
+        types.Content(role='user' if item['role'] == 'user' else 'model', parts=[types.Part.from_text(text=item['text'])])
+        for item in recent
+    ] if types is not None else [user_message]
+    response = call_gemini_with_fallback(
+        contents,
+        build_character_prompt(mode),
+        temperature=0.8 if mode == 'love' else 0.7,
+    )
+    answer = getattr(response, 'text', None) if response is not None else None
+    answer = answer.strip() if isinstance(answer, str) else ''
+    if not answer:
+        answer = fallback
+    history.append({'role': 'model', 'text': answer})
+    if len(history) > 20:
+        del history[:-20]
+    return answer
 
 
 def get_group_response(chat_id: str, user_name: str, user_message: str) -> str:
@@ -71,9 +96,14 @@ def get_group_response(chat_id: str, user_name: str, user_message: str) -> str:
         return 'I think you said Minecraft before. 😌'
     if 'remember' in user_message.lower() and 'minecraft' in user_message.lower():
         return 'Noted — I’ll remember that you like Minecraft. 😌'
-    if not os.getenv('GEMINI_API_KEY'):
-        return random.choice(['heyy 😂', 'wait what happened?', 'ohhh I get you', 'that’s actually kinda funny', 'nahhh 💀'])
-    return 'heyy, I’m here 😌'
+    history = group_conversation_history.setdefault(str(chat_id), [])
+    return _generate_response(
+        history,
+        user_message,
+        user_name,
+        'normal',
+        random.choice(['heyy 😂', 'wait what happened?', 'ohhh I get you', 'that’s actually kinda funny', 'nahhh 💀']),
+    )
 
 
 def get_ai_response(user_id: str, user_message: str, user_name: str = 'User') -> str:
@@ -86,22 +116,26 @@ def get_ai_response(user_id: str, user_message: str, user_name: str = 'User') ->
         return 'Minecraft 😭'
     if 'remember' in lower and ('minecraft' in lower or 'like' in lower):
         return 'Got it, I’ll remember that. 😌'
-    if not os.getenv('GEMINI_API_KEY'):
-        return random.choice(['heyy 😊', 'wait, seriously?', 'hmm?', 'yeah, that makes sense', 'nahhh 💀'])
-    return 'heyy, I’m listening. 😌'
+    history = conversation_history.setdefault(str(user_id), [])
+    return _generate_response(history, user_message, user_name, 'normal', random.choice(['heyy 😊', 'wait, seriously?', 'hmm?', 'yeah, that makes sense', 'nahhh 💀']))
 
 
 def get_abuse_response(user_id: str, user_message: str, user_name: str = 'User') -> str:
-    return random.choice(['bro look who’s talking 😭', 'okay okay, the confidence is loud but the facts are missing 😌', 'you’re giving comedy energy today, I’ll give you that'])
+    history = conversation_history.setdefault(str(user_id), [])
+    fallback = random.choice(['bro look who’s talking 😭', 'okay okay, the confidence is loud but the facts are missing 😌', 'you’re giving comedy energy today, I’ll give you that'])
+    return _generate_response(history, user_message, user_name, 'abuse', fallback)
 
 
 def get_lover_response(user_id: str, user_message: str, user_name: str = 'User') -> str:
     lower = (user_message or '').lower()
     if 'hi' in lower or 'hello' in lower:
-        return 'heyy, I’m glad you messaged me ❤️'
-    if 'love' in lower or 'miss' in lower:
-        return 'aww, you’re making me smile a little too much right now 😭❤️'
-    return 'you really know how to make my day better, huh? ❤️'
+        fallback = 'heyy, I’m glad you messaged me ❤️'
+    elif 'love' in lower or 'miss' in lower:
+        fallback = 'aww, you’re making me smile a little too much right now 😭❤️'
+    else:
+        fallback = 'you really know how to make my day better, huh? ❤️'
+    history = conversation_history.setdefault(str(user_id), [])
+    return _generate_response(history, user_message, user_name, 'love', fallback)
 
 
 def get_random_joke() -> str:
