@@ -82,4 +82,4 @@ class MemoryStore:
             }
 
 
-memory_store = MemoryStore(os.getenv("DATABASE_URL", "chatpaglu.db"))
+memory_store = MemoryStore()

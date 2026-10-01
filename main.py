@@ -270,7 +270,10 @@ async def vision_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = str(update.effective_user.id)
     chat_type = update.effective_chat.type
-    if context.args and context.args[0].lower() in {'off', 'disable', 'false'}:
+    args = [arg.strip() for arg in (context.args or []) if arg and arg.strip()]
+    mention = next((arg for arg in args if arg.startswith('@')), None)
+    toggle_args = [arg for arg in args if not arg.startswith('@')]
+    if toggle_args and toggle_args[0].lower() in {'off', 'disable', 'false'}:
         clear_user_mode(user_id)
         await update.message.reply_text('Love mode is off. Back to normal chat.')
         return
@@ -278,6 +281,9 @@ async def love_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text('Love mode is disabled in groups here.')
         return
     set_user_mode(user_id, ChatMode.LOVE)
+    if mention:
+        await update.message.reply_text(f'Love mode activated for {mention}. I’m feeling extra sweet and affectionate today ❤️')
+        return
     await update.message.reply_text('Love mode activated. I’m feeling extra sweet and affectionate today ❤️')
 
 
@@ -399,6 +405,7 @@ def register_commands(application: Application) -> None:
     application.add_handler(CommandHandler('cooldown', cooldown_command))
     application.add_handler(CommandHandler('vision', vision_command))
     application.add_handler(CommandHandler('love', love_command))
+    application.add_handler(CommandHandler('lover', love_command))
     application.add_handler(CommandHandler('abuse', abuse_command))
     application.add_handler(CommandHandler('joke', joke_command))
     application.add_handler(CommandHandler('quote', quote_command))

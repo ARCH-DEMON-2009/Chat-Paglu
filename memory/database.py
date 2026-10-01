@@ -5,12 +5,29 @@ from typing import Optional
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "chatpaglu.db")
 
 
+def _looks_like_sqlite_path(value: Optional[str]) -> bool:
+    if value is None:
+        return False
+    value = str(value).strip()
+    if not value or value == ':memory:':
+        return True
+    lowered = value.lower()
+    if lowered.startswith(('sqlite://', 'sqlite:///', 'file:')):
+        return True
+    if lowered.startswith(('postgres://', 'postgresql://', 'mysql://', 'mariadb://')):
+        return False
+    return value.endswith(('.db', '.sqlite', '.sqlite3')) or value.startswith(('.', '/', os.sep)) or '/' in value or '\\' in value
+
+
 def get_database_path(path: Optional[str] = None) -> str:
     if path is not None:
-        return path
-    if os.getenv("USE_SUPABASE", "false").lower() in {"1", "true", "yes", "on"}:
-        return os.getenv("DATABASE_URL", DEFAULT_DB_PATH)
-    return os.getenv("DATABASE_URL", DEFAULT_DB_PATH) if os.getenv("DATABASE_URL", "").startswith(("sqlite://", "sqlite:///", ":memory:")) else DEFAULT_DB_PATH
+        if _looks_like_sqlite_path(path):
+            return str(path)
+        return DEFAULT_DB_PATH
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url and _looks_like_sqlite_path(database_url):
+        return database_url
+    return DEFAULT_DB_PATH
 
 
 class DatabaseManager:

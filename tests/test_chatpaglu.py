@@ -41,7 +41,7 @@ def test_command_registration_includes_required_commands():
     required = {
         'start', 'admin', 'stats', 'reload', 'setname', 'setprompt', 'memory',
         'clear_memory', 'participation', 'cooldown', 'vision', 'love', 'abuse',
-        'help'
+        'lover', 'help'
     }
     assert required.issubset(names)
 
