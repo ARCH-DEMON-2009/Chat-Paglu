@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+.env
+.env.*
+chatpaglu.db
+*.db
+.venv/
+venv/
